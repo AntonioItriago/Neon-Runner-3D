@@ -2,11 +2,13 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Neon Runner 3D</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <!-- MONETAG: pega aquí el snippet SDK de tu panel (Zones → Rewarded → Setup) -->
-    <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:ital,wght@0,500;0,600;0,700;1,700&display=swap" rel="stylesheet">
+    <!-- SDK REAL de Monetag -->
+    <script src="//libtl.com/sdk.js" data-zone="12002308" data-sdk="show_12002308"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:ital,wght@0,500;0,600;0,700;1,700&display=swap" rel="stylesheet">
     <style>
         :root{--ink:#07031a;--panel:rgba(14,7,38,.78);--pink:#ff2e93;--cyan:#26e7ff;--gold:#ffc45c;--violet:#7a3cff;--text:#f4eeff;--muted:rgba(230,220,255,.55)}
         *{margin:0;padding:0;box-sizing:border-box}
@@ -88,7 +90,7 @@
         <div class="screen-subtitle" id="greeting">Corre hacia adelante. Esquiva hacia los lados.</div>
         <button class="btn" id="startBtn">JUGAR</button>
         <button class="btn btn-ad" id="adStartBtn">📺 Ver anuncio · Gemas x2</button>
-        <button class="btn btn-mini" id="lbBtnStart">🏆 Ranking de amigos</button>
+        <button class="btn btn-mini" id="lbBtnStart"> Ranking de amigos</button>
         <button class="btn btn-mini btn-close" id="closeBtn">✕ Cerrar app</button>
         <div class="controls-hint">
             <kbd>←</kbd> <kbd>→</kbd> carriles · <kbd>ESPACIO</kbd> saltar · <kbd>↓</kbd> deslizar<br>
@@ -107,16 +109,6 @@
     </div>
 </div>
 
-<div id="adOverlay">
-    <div class="ad-box">
-        <div class="ad-tag">ANUNCIO · MODO PRUEBA (SIMULADO)</div>
-        <div class="ad-visual">📺</div>
-        <div class="ad-count" id="adCountdown">5</div>
-        <button class="btn" id="adClaimBtn" disabled>Reclamar recompensa</button><br>
-        <button class="btn-ghost" id="adCancelBtn">Cancelar sin recompensa</button>
-    </div>
-</div>
-
 <div id="lbPanel">
     <div class="lb-box">
         <div class="lb-title">🏆 RANKING DE AMIGOS</div>
@@ -130,6 +122,17 @@
 </div>
 
 <div id="toast" class="hidden"></div>
+
+<!-- Anuncio simulado (fallback si Monetag no responde) -->
+<div id="adOverlay">
+    <div class="ad-box">
+        <div class="ad-tag">ANUNCIO · MODO PRUEBA (SIMULADO)</div>
+        <div class="ad-visual">📺</div>
+        <div class="ad-count" id="adCountdown">5</div>
+        <button class="btn" id="adClaimBtn" disabled>Reclamar recompensa</button>
+        <button class="btn btn-ghost" id="adCancelBtn">Cancelar sin recompensa</button>
+    </div>
+</div>
 
 <script>
 // ================================================================
@@ -154,40 +157,65 @@ function haptic(type, style) {
     } catch(e) {}
 }
 
-// CONFIG DE TU BOT (deep links de reto): t.me/username/app
-const TG_BOT = { username: 'PON_AQUI_TU_BOT', app: 'PON_AQUI_TU_APP' };
+// CONFIG DE TU BOT
+const TG_BOT = { username: 'NeonRunner3D_bot', app: 'NeonRunner3D' };
 
 // ================================================================
-//  MONETAG — ADAPTADOR REWARDED
+//  MONETAG — INTEGRACIÓN REAL CON show_12002308()
 // ================================================================
-const MONETAG_CONFIG = { zones: { doubleCoins: 'PON_AQUI_TU_ZONE_ID_1', revive: 'PON_AQUI_TU_ZONE_ID_2' } };
-function monetagAvailable() {
-    return !!(window.MonetagRewarded || window.monetagRewarded || (window.monetag && window.monetag.rewarded));
-}
-function showMonetagRewarded(zoneId) {
+let adActive = false;
+let monetagSDKReady = false;
+
+// Verificar que el SDK de Monetag cargó correctamente
+window.addEventListener('load', function() {
+    setTimeout(() => {
+        if (typeof show_12002308 === 'function') {
+            monetagSDKReady = true;
+            console.log('[MONETAG] ✅ SDK cargado correctamente');
+        } else {
+            console.warn('[MONETAG] ⚠️ SDK no disponible, se usará modo simulado');
+        }
+    }, 1000);
+});
+
+function showMonetagRewarded() {
     return new Promise(resolve => {
         let settled = false;
         const done = v => { if (!settled) { settled = true; resolve(v); } };
-        setTimeout(() => done(false), 60000);
+        
+        // Timeout de seguridad (90 segundos)
+        const timeout = setTimeout(() => {
+            console.warn('[MONETAG] Timeout - sin respuesta');
+            done(false);
+        }, 90000);
+        
         try {
-            const api = window.MonetagRewarded || window.monetagRewarded || (window.monetag && window.monetag.rewarded);
-            if (!api) return done(null);
-            if (typeof api.show === 'function') {
-                const r = api.show({ zoneId, onReward: () => done(true), onClose: () => done(false), onError: () => done(false) });
-                if (r && typeof r.then === 'function') r.then(ok => done(!!ok)).catch(() => done(false));
-                return;
+            if (typeof show_12002308 !== 'function') {
+                console.log('[MONETAG] Función show_12002308 no disponible');
+                clearTimeout(timeout);
+                return done(null);
             }
-            if (typeof api === 'function') {
-                const ad = new api(zoneId);
-                if (ad.onReward) ad.onReward(() => done(true));
-                if (ad.onClose)  ad.onClose(() => done(false));
-                ad.show && ad.show();
-                return;
-            }
-            done(null);
-        } catch(e) { done(false); }
+            
+            console.log('[MONETAG] Mostrando anuncio real...');
+            
+            // Llamar a la función real de Monetag
+            show_12002308().then(() => {
+                clearTimeout(timeout);
+                console.log('[MONETAG] ✅ Anuncio visto - recompensa otorgada');
+                done(true);
+            }).catch(err => {
+                clearTimeout(timeout);
+                console.error('[MONETAG] ❌ Error:', err);
+                done(false);
+            });
+        } catch(e) { 
+            clearTimeout(timeout);
+            console.error('[MONETAG] Excepción:', e);
+            done(false); 
+        }
     });
 }
+
 function showSimulatedAd() {
     return new Promise(resolve => {
         const ov = document.getElementById('adOverlay');
@@ -206,23 +234,42 @@ function showSimulatedAd() {
         cancel.onclick = () => close(false);
     });
 }
+
 const AdManager = {
     async show(slot) {
         if (adActive) return false;
         adActive = true;
         try {
             let rewarded = null;
-            if (monetagAvailable()) {
+            
+            // Intentar con Monetag real
+            if (monetagSDKReady) {
+                console.log('[ADS] Usando Monetag real para slot:', slot);
                 rewarded = await Promise.race([
-                    showMonetagRewarded(MONETAG_CONFIG.zones[slot]),
-                    new Promise(r => setTimeout(() => r('TIMEOUT'), 4000))
+                    showMonetagRewarded(),
+                    new Promise(r => setTimeout(() => { 
+                        console.warn('[ADS] Monetag tardó mucho, usando simulado');
+                        r(null); 
+                    }, 8000))
                 ]);
-                if (rewarded === 'TIMEOUT') { console.warn('[ADS] SDK sin respuesta → modo simulado'); rewarded = null; }
+            } else {
+                console.log('[ADS] Monetag no disponible, usando simulado');
             }
-            if (rewarded === null) rewarded = await showSimulatedAd();
+            
+            // Fallback a anuncio simulado
+            if (rewarded === null || rewarded === false) {
+                console.log('[ADS] Usando anuncio simulado como fallback');
+                rewarded = await showSimulatedAd();
+            }
+            
             return !!rewarded;
-        } catch(e) { console.error('[ADS]', e); return false; }
-        finally { adActive = false; }
+        } catch(e) { 
+            console.error('[ADS] Error general:', e); 
+            return false; 
+        }
+        finally { 
+            adActive = false; 
+        }
     }
 };
 
@@ -240,7 +287,7 @@ const CFG = { LANES:3, LANE_WIDTH:100, ROAD_BOTTOM:H-40, HORIZON_Y:100, PLAYER_Y
 const LANE_CENTERS = [W/2-CFG.LANE_WIDTH, W/2, W/2+CFG.LANE_WIDTH];
 const MAX_REVIVES = 2;
 let gameSpeed, score, coins, highScore, distance, frameCount, spawnTimer;
-let coinMultiplier = 1, revivesUsed = 0, reviveGrace = 0, adActive = false;
+let coinMultiplier = 1, revivesUsed = 0, reviveGrace = 0;
 highScore = parseInt(localStorage.getItem('neonRunner3D_HS')) || 0;
 distance=0;frameCount=0;gameSpeed=CFG.INITIAL_SPEED;score=0;coins=0;spawnTimer=90;
 
@@ -489,7 +536,6 @@ let roadMarkOffset=0,gridOff=0;
 function drawRoad(){
     const HY=CFG.HORIZON_Y,steps=60;
     const spd=currentState===GameState.PLAYING?gameSpeed:1.4;
-    // cielo
     const sky=ctx.createLinearGradient(0,0,0,HY);
     sky.addColorStop(0,'#05021a');sky.addColorStop(.55,'#1d0b49');sky.addColorStop(1,'#6a1b72');
     ctx.fillStyle=sky;ctx.fillRect(0,0,W,HY+1);
@@ -499,7 +545,6 @@ function drawRoad(){
         ctx.fillRect((i*173.7+frameCount*.008)%W,(i*89.3)%(HY-10),1.5,1.5);
     }
     ctx.globalAlpha=1;
-    // sol retro
     const sunY=HY-4,sr=58;
     ctx.save();ctx.beginPath();ctx.rect(0,0,W,HY);ctx.clip();
     const sg=ctx.createLinearGradient(0,sunY-sr,0,sunY+sr);
@@ -509,7 +554,6 @@ function drawRoad(){
     ctx.shadowBlur=0;ctx.fillStyle='#4c1360';
     for(let k=0;k<5;k++)ctx.fillRect(W/2-sr,sunY-36+k*8,sr*2,1+k*.9);
     ctx.restore();
-    // skyline en dos capas (parallax)
     const layers=[{sp:.02,col:'#1b0d44',win:'rgba(255,70,160,.25)',n:14,seed:7,max:80},
                   {sp:.05,col:'#0d0628',win:'rgba(38,231,255,.32)',n:16,seed:3,max:60}];
     layers.forEach(L=>{
@@ -524,7 +568,6 @@ function drawRoad(){
                     if(Math.sin(wx*7.3+wy*3.1+i*5.7+L.seed)>.3)ctx.fillRect(bx+wx,wy,3,4);
         }
     });
-    // suelo con rejilla
     const gg=ctx.createLinearGradient(0,HY,0,H);
     gg.addColorStop(0,'#1a0838');gg.addColorStop(1,'#07031a');
     ctx.fillStyle=gg;ctx.fillRect(0,HY,W,H-HY);
@@ -539,7 +582,6 @@ function drawRoad(){
     for(let i=-12;i<=12;i++){
         ctx.beginPath();ctx.moveTo(W/2+i*7,HY);ctx.lineTo(W/2+i*70*1.08,perspY(1.08));ctx.stroke();
     }
-    // asfalto
     for(let i=0;i<steps;i++){
         const d0=i/steps,d1=(i+1)/steps;
         const y0=perspY(d0),y1=perspY(d1),w0=roadWidthAt(d0),w1=roadWidthAt(d1);
@@ -549,7 +591,6 @@ function drawRoad(){
         ctx.lineTo(W/2+w1/2,y1);ctx.lineTo(W/2-w1/2,y1);
         ctx.closePath();ctx.fill();
     }
-    // bordes de neón: cian a la izquierda, rosa a la derecha
     [[-1,'#26e7ff'],[1,'#ff2e93']].forEach(([side,col])=>{
         ctx.shadowColor=col;ctx.shadowBlur=14;ctx.strokeStyle=col;ctx.lineWidth=3;
         ctx.beginPath();
@@ -557,7 +598,6 @@ function drawRoad(){
         ctx.stroke();
     });
     ctx.shadowBlur=0;
-    // divisores de carril (en el borde entre carriles)
     roadMarkOffset=(roadMarkOffset+spd*.008)%.12;
     ctx.strokeStyle='rgba(190,245,255,.4)';
     for(const ld of [-.5,.5])
@@ -656,10 +696,10 @@ function ingestStartParam(){
 }
 lbLoad(l => { friendsList = l; ingestStartParam(); renderLB(); });
 function copyLink(){
-    if (!botConfigured()) { toast('⚠️ Configura TG_BOT en el código (usuario y app de tu bot)'); return; }
+    if (!botConfigured()) { toast('️ Configura TG_BOT en el código (usuario y app de tu bot)'); return; }
     const url = deepLink();
     if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(url).then(()=>toast('🔗 Enlace de reto copiado')).catch(()=>prompt('Copia tu enlace:', url));
+        navigator.clipboard.writeText(url).then(()=>toast(' Enlace de reto copiado')).catch(()=>prompt('Copia tu enlace:', url));
     } else prompt('Copia tu enlace:', url);
 }
 
@@ -695,13 +735,12 @@ $('shareBtn').addEventListener('click', ()=>{
     copyLink();
 });
 
-// ---- CERRAR APP + BOTÓN ATRÁS DE TELEGRAM ----
 function closeApp(){
     haptic('impact','medium');
     if (tg) { try { tg.close(); } catch(e){} }
     setTimeout(()=>{
         window.close();
-        toast('👋 Hasta la próxima. En navegador: Ctrl+W');
+        toast(' Hasta la próxima. En navegador: Ctrl+W');
     },250);
 }
 function toMenu(){
@@ -732,7 +771,7 @@ $('reviveBtn').addEventListener('click',async()=>{
     console.log('[REVIVE] click →',{adActive,revivesUsed});
     if(adActive||revivesUsed>=MAX_REVIVES)return;
     const btn=$('reviveBtn');
-    btn.disabled=true; btn.textContent='⏳ Mostrando anuncio…';
+    btn.disabled=true; btn.textContent=' Mostrando anuncio…';
     try{
         const ok=await AdManager.show('revive');
         console.log('[REVIVE] resultado del anuncio:',ok);
