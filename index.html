@@ -4,8 +4,6 @@
     <meta charset="UTF-8">
     <title>Neon Runner 3D</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <!-- SDK REAL de Monetag -->
-    <script src="//libtl.com/sdk.js" data-zone="12002308" data-sdk="show_12002308"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:ital,wght@0,500;0,600;0,700;1,700&display=swap" rel="stylesheet">
@@ -91,7 +89,7 @@
         <button class="btn" id="startBtn">JUGAR</button>
         <button class="btn btn-ad" id="adStartBtn">📺 Ver anuncio · Gemas x2</button>
         <button class="btn btn-mini" id="lbBtnStart"> Ranking de amigos</button>
-        <button class="btn btn-mini btn-close" id="closeBtn">✕ Cerrar app</button>
+        <button class="btn btn-mini btn-close" id="closeBtn"> Cerrar app</button>
         <div class="controls-hint">
             <kbd>←</kbd> <kbd>→</kbd> carriles · <kbd>ESPACIO</kbd> saltar · <kbd>↓</kbd> deslizar<br>
             📱 En móvil: desliza el dedo (swipe) · ⬅️ botón atrás de Telegram: menú/salir
@@ -104,7 +102,7 @@
         <div class="new-record hidden" id="newRecordText">🎉 ¡NUEVO RÉCORD! 🎉</div>
         <button class="btn btn-ad" id="reviveBtn">📺 Revivir (2 restantes)</button>
         <button class="btn" id="restartBtn">REINTENTAR</button>
-        <button class="btn btn-mini" id="shareBtn">📤 Retar amigos</button>
+        <button class="btn btn-mini" id="shareBtn"> Retar amigos</button>
         <button class="btn btn-mini" id="lbBtnOver">🏆 Ver ranking</button>
     </div>
 </div>
@@ -123,7 +121,7 @@
 
 <div id="toast" class="hidden"></div>
 
-<!-- Anuncio simulado (fallback si Monetag no responde) -->
+<!-- Anuncio simulado (SOLO fallback manual si el SDK falla) -->
 <div id="adOverlay">
     <div class="ad-box">
         <div class="ad-tag">ANUNCIO · MODO PRUEBA (SIMULADO)</div>
@@ -161,61 +159,79 @@ function haptic(type, style) {
 const TG_BOT = { username: 'NeonRunner3D_bot', app: 'NeonRunner3D' };
 
 // ================================================================
-//  MONETAG — INTEGRACIÓN REAL CON show_12002308()
+//  MONETAG — INTEGRACIÓN REAL CORREGIDA
 // ================================================================
 let adActive = false;
 let monetagSDKReady = false;
 
-// Verificar que el SDK de Monetag cargó correctamente
-window.addEventListener('load', function() {
-    setTimeout(() => {
-        if (typeof show_12002308 === 'function') {
-            monetagSDKReady = true;
-            console.log('[MONETAG] ✅ SDK cargado correctamente');
-        } else {
-            console.warn('[MONETAG] ⚠️ SDK no disponible, se usará modo simulado');
-        }
-    }, 1000);
-});
+// 1. Cargar SDK de Monetag de forma dinámica y robusta
+(function loadMonetagSDK() {
+    const script = document.createElement('script');
+    script.src = 'https://libtl.com/sdk.js';
+    script.setAttribute('data-zone', '12002308');
+    script.setAttribute('data-sdk', 'show_12002308');
+    script.onload = () => {
+        setTimeout(() => {
+            if (typeof show_12002308 === 'function') {
+                monetagSDKReady = true;
+                console.log('[MONETAG] ✅ SDK cargado correctamente');
+            } else {
+                console.warn('[MONETAG] ️ SDK cargado pero función show_12002308 no disponible');
+            }
+        }, 500);
+    };
+    script.onerror = () => {
+        console.error('[MONETAG] ❌ Error al cargar el script del SDK');
+    };
+    document.head.appendChild(script);
+})();
 
+// 2. Función para mostrar anuncio rewarded
 function showMonetagRewarded() {
     return new Promise(resolve => {
         let settled = false;
-        const done = v => { if (!settled) { settled = true; resolve(v); } };
+        const done = (value) => {
+            if (!settled) {
+                settled = true;
+                resolve(value);
+            }
+        };
         
-        // Timeout de seguridad (90 segundos)
+        // Timeout de 30 segundos (Monetag puede tardar en cargar el primer anuncio)
         const timeout = setTimeout(() => {
-            console.warn('[MONETAG] Timeout - sin respuesta');
+            console.warn('[MONETAG] ⏱️ Timeout - anuncio no completado a tiempo');
             done(false);
-        }, 90000);
+        }, 30000);
         
         try {
-            if (typeof show_12002308 !== 'function') {
-                console.log('[MONETAG] Función show_12002308 no disponible');
+            if (!monetagSDKReady || typeof show_12002308 !== 'function') {
+                console.log('[MONETAG] SDK no disponible');
                 clearTimeout(timeout);
                 return done(null);
             }
             
-            console.log('[MONETAG] Mostrando anuncio real...');
+            console.log('[MONETAG] 📺 Mostrando anuncio real...');
             
-            // Llamar a la función real de Monetag
+            // Monetag devuelve una Promise
             show_12002308().then(() => {
                 clearTimeout(timeout);
-                console.log('[MONETAG] ✅ Anuncio visto - recompensa otorgada');
+                console.log('[MONETAG] ✅ ¡Anuncio visto - recompensa otorgada!');
                 done(true);
             }).catch(err => {
                 clearTimeout(timeout);
-                console.error('[MONETAG] ❌ Error:', err);
+                console.error('[MONETAG] ❌ Error o anuncio cerrado sin recompensa:', err);
                 done(false);
             });
-        } catch(e) { 
+            
+        } catch(e) {
             clearTimeout(timeout);
             console.error('[MONETAG] Excepción:', e);
-            done(false); 
+            done(false);
         }
     });
 }
 
+// 3. Anuncio simulado (SOLO para debugging si el SDK falla)
 function showSimulatedAd() {
     return new Promise(resolve => {
         const ov = document.getElementById('adOverlay');
@@ -235,40 +251,37 @@ function showSimulatedAd() {
     });
 }
 
+// 4. AdManager corregido - SIN fallback automático al simulado
 const AdManager = {
     async show(slot) {
         if (adActive) return false;
         adActive = true;
+        
         try {
-            let rewarded = null;
+            console.log(`[ADS] Intentando mostrar anuncio real para slot: ${slot}`);
             
             // Intentar con Monetag real
-            if (monetagSDKReady) {
-                console.log('[ADS] Usando Monetag real para slot:', slot);
-                rewarded = await Promise.race([
-                    showMonetagRewarded(),
-                    new Promise(r => setTimeout(() => { 
-                        console.warn('[ADS] Monetag tardó mucho, usando simulado');
-                        r(null); 
-                    }, 8000))
-                ]);
+            const rewarded = await showMonetagRewarded();
+            
+            if (rewarded === true) {
+                console.log('[ADS] ✅ Anuncio real completado');
+                return true;
+            } else if (rewarded === false) {
+                console.log('[ADS] ❌ Anuncio real falló o fue cerrado sin recompensa');
+                return false;
             } else {
-                console.log('[ADS] Monetag no disponible, usando simulado');
+                // null = SDK no disponible
+                console.warn('[ADS] ⚠️ SDK no disponible. Si ves esto, el SDK de Monetag no cargó.');
+                // Descomenta la siguiente línea SOLO si quieres usar el simulado como fallback manual
+                // return await showSimulatedAd(); 
+                return false;
             }
             
-            // Fallback a anuncio simulado
-            if (rewarded === null || rewarded === false) {
-                console.log('[ADS] Usando anuncio simulado como fallback');
-                rewarded = await showSimulatedAd();
-            }
-            
-            return !!rewarded;
-        } catch(e) { 
-            console.error('[ADS] Error general:', e); 
-            return false; 
-        }
-        finally { 
-            adActive = false; 
+        } catch(e) {
+            console.error('[ADS] Error general:', e);
+            return false;
+        } finally {
+            adActive = false;
         }
     }
 };
@@ -674,7 +687,7 @@ function renderLB(){
     list.forEach((e,i)=>{
         const li = document.createElement('li');
         if (e.n === myName) li.className = 'me';
-        const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':(i+1)+'.';
+        const medal = i===0?'🥇':i===1?'':i===2?'🥉':(i+1)+'.';
         li.innerHTML = '<span class="lb-pos">'+medal+'</span><span class="lb-name">'+escapeHtml(e.n)+(e.n===myName?' (tú)':'')+'</span><span class="lb-score">'+e.s+'</span>';
         ul.appendChild(li);
     });
@@ -765,7 +778,7 @@ $('adStartBtn').addEventListener('click',async()=>{
     toast('Cargando anuncio…');
     const ok=await AdManager.show('doubleCoins');
     if(ok){startGame();coinMultiplier=2;$('coinMult').classList.remove('hidden');toast('💎 ¡Gemas x2 activadas!');haptic('notify','success')}
-    else toast('Anuncio no completado');
+    else toast('Anuncio no completado o SDK no disponible');
 });
 $('reviveBtn').addEventListener('click',async()=>{
     console.log('[REVIVE] click →',{adActive,revivesUsed});
@@ -775,7 +788,7 @@ $('reviveBtn').addEventListener('click',async()=>{
     try{
         const ok=await AdManager.show('revive');
         console.log('[REVIVE] resultado del anuncio:',ok);
-        if(ok) revive(); else toast('Anuncio no completado');
+        if(ok) revive(); else toast('Anuncio no completado o SDK no disponible');
     }catch(e){ console.error('[REVIVE] error:',e); toast('Error al mostrar el anuncio'); }
     finally{ btn.disabled=false; updateReviveBtn(); }
 });
