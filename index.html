@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <title>Neon Runner 3D</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    
+    <!-- MONETAG SDK - Carga oficial -->
+    <script src='//libtl.com/sdk.js' data-zone='12002308' data-sdk='show_12002308'></script>
+    
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:ital,wght@0,500;0,600;0,700;1,700&display=swap" rel="stylesheet">
@@ -48,17 +52,10 @@
         .controls-hint{margin-top:18px;font-size:12px;color:var(--muted);text-align:center;line-height:2}
         .controls-hint kbd{font-family:inherit;background:rgba(255,255,255,.1);padding:2px 8px;border-radius:5px;border:1px solid rgba(255,255,255,.22);border-bottom-width:2px}
         .hidden{opacity:0!important;pointer-events:none!important}
-        #adOverlay{position:fixed;inset:0;background:rgba(5,2,18,.94);display:none;align-items:center;justify-content:center;z-index:50}
-        .ad-box,.lb-box{border:1px solid rgba(38,231,255,.35);border-radius:18px;background:var(--panel);box-shadow:0 0 50px rgba(122,60,255,.3)}
-        .ad-box{text-align:center;padding:28px 38px;max-width:88vw}
-        .ad-tag{font-size:11px;letter-spacing:1.5px;color:var(--muted);margin-bottom:12px}
-        .ad-visual{font-size:56px;animation:pulse 1s infinite alternate}
-        .ad-count{font-size:42px;color:var(--cyan);margin:8px 0 16px;font-weight:700;text-shadow:0 0 18px rgba(38,231,255,.6)}
-        #adClaimBtn[disabled]{opacity:.35;cursor:not-allowed}
         #toast{position:fixed;top:14px;left:50%;transform:translateX(-50%);background:rgba(14,7,38,.85);border:1px solid var(--cyan);color:#dffbff;padding:9px 22px;border-radius:30px;font-size:13px;font-weight:600;z-index:60;backdrop-filter:blur(6px);box-shadow:0 0 22px rgba(38,231,255,.3);transition:opacity .3s;white-space:nowrap}
         #lbPanel{position:fixed;inset:0;background:rgba(5,2,18,.92);display:none;align-items:center;justify-content:center;z-index:55}
         #lbPanel.open{display:flex}
-        .lb-box{width:min(420px,92vw);max-height:80vh;overflow:auto;padding:24px}
+        .lb-box{border:1px solid rgba(38,231,255,.35);border-radius:18px;background:var(--panel);box-shadow:0 0 50px rgba(122,60,255,.3);width:min(420px,92vw);max-height:80vh;overflow:auto;padding:24px}
         .lb-title{color:#fff;font-size:22px;font-weight:700;text-align:center;margin-bottom:4px;text-shadow:0 0 16px rgba(255,46,147,.6)}
         .lb-sub{color:var(--muted);font-size:12px;text-align:center;margin-bottom:14px}
         #lbList{list-style:none}
@@ -121,17 +118,6 @@
 
 <div id="toast" class="hidden"></div>
 
-<!-- Anuncio simulado (SOLO fallback manual si el SDK falla) -->
-<div id="adOverlay">
-    <div class="ad-box">
-        <div class="ad-tag">ANUNCIO · MODO PRUEBA (SIMULADO)</div>
-        <div class="ad-visual">📺</div>
-        <div class="ad-count" id="adCountdown">5</div>
-        <button class="btn" id="adClaimBtn" disabled>Reclamar recompensa</button>
-        <button class="btn btn-ghost" id="adCancelBtn">Cancelar sin recompensa</button>
-    </div>
-</div>
-
 <script>
 // ================================================================
 //  TELEGRAM
@@ -159,36 +145,44 @@ function haptic(type, style) {
 const TG_BOT = { username: 'NeonRunner3D_bot', app: 'NeonRunner3D' };
 
 // ================================================================
-//  MONETAG — INTEGRACIÓN REAL CORREGIDA
+//  MONETAG — INTEGRACIÓN CORREGIDA
 // ================================================================
 let adActive = false;
+let gamePaused = false;
 let monetagSDKReady = false;
 
-// 1. Cargar SDK de Monetag de forma dinámica y robusta
-(function loadMonetagSDK() {
-    const script = document.createElement('script');
-    script.src = 'https://libtl.com/sdk.js';
-    script.setAttribute('data-zone', '12002308');
-    script.setAttribute('data-sdk', 'show_12002308');
-    script.onload = () => {
-        setTimeout(() => {
-            if (typeof show_12002308 === 'function') {
-                monetagSDKReady = true;
-                console.log('[MONETAG] ✅ SDK cargado correctamente');
-            } else {
-                console.warn('[MONETAG] ️ SDK cargado pero función show_12002308 no disponible');
-            }
-        }, 500);
-    };
-    script.onerror = () => {
-        console.error('[MONETAG] ❌ Error al cargar el script del SDK');
-    };
-    document.head.appendChild(script);
-})();
+// Verificar si el SDK está listo
+function checkMonetagSDK() {
+    if (typeof show_12002308 === 'function') {
+        monetagSDKReady = true;
+        console.log('[MONETAG] ✅ SDK cargado y listo');
+        return true;
+    }
+    return false;
+}
 
-// 2. Función para mostrar anuncio rewarded
-function showMonetagRewarded() {
+// Esperar a que el SDK esté disponible
+function waitForSDK(timeout = 5000) {
     return new Promise(resolve => {
+        if (checkMonetagSDK()) return resolve(true);
+        
+        const startTime = Date.now();
+        const interval = setInterval(() => {
+            if (checkMonetagSDK()) {
+                clearInterval(interval);
+                resolve(true);
+            } else if (Date.now() - startTime > timeout) {
+                clearInterval(interval);
+                console.warn('[MONETAG] ⏱️ Timeout esperando SDK');
+                resolve(false);
+            }
+        }, 200);
+    });
+}
+
+// Mostrar anuncio rewarded de Monetag
+async function showMonetagRewarded() {
+    return new Promise(async resolve => {
         let settled = false;
         const done = (value) => {
             if (!settled) {
@@ -197,29 +191,29 @@ function showMonetagRewarded() {
             }
         };
         
-        // Timeout de 30 segundos (Monetag puede tardar en cargar el primer anuncio)
+        // Esperar a que el SDK esté listo
+        const sdkReady = await waitForSDK(5000);
+        if (!sdkReady) {
+            console.warn('[MONETAG] SDK no disponible');
+            return done(null);
+        }
+        
+        // Timeout de 15 segundos para el anuncio
         const timeout = setTimeout(() => {
-            console.warn('[MONETAG] ⏱️ Timeout - anuncio no completado a tiempo');
+            console.warn('[MONETAG] ⏱️ Timeout - anuncio no completado');
             done(false);
-        }, 30000);
+        }, 15000);
         
         try {
-            if (!monetagSDKReady || typeof show_12002308 !== 'function') {
-                console.log('[MONETAG] SDK no disponible');
-                clearTimeout(timeout);
-                return done(null);
-            }
+            console.log('[MONETAG] 📺 Mostrando anuncio...');
             
-            console.log('[MONETAG] 📺 Mostrando anuncio real...');
-            
-            // Monetag devuelve una Promise
             show_12002308().then(() => {
                 clearTimeout(timeout);
-                console.log('[MONETAG] ✅ ¡Anuncio visto - recompensa otorgada!');
+                console.log('[MONETAG] ✅ Anuncio completado');
                 done(true);
             }).catch(err => {
                 clearTimeout(timeout);
-                console.error('[MONETAG] ❌ Error o anuncio cerrado sin recompensa:', err);
+                console.error('[MONETAG] ❌ Error o cancelado:', err);
                 done(false);
             });
             
@@ -231,60 +225,57 @@ function showMonetagRewarded() {
     });
 }
 
-// 3. Anuncio simulado (SOLO para debugging si el SDK falla)
-function showSimulatedAd() {
-    return new Promise(resolve => {
-        const ov = document.getElementById('adOverlay');
-        const cd = document.getElementById('adCountdown');
-        const claim = document.getElementById('adClaimBtn');
-        const cancel = document.getElementById('adCancelBtn');
-        ov.style.display = 'flex';
-        let t = 5; cd.textContent = t; claim.disabled = true;
-        const iv = setInterval(() => {
-            t--;
-            if (t <= 0) { clearInterval(iv); cd.textContent = '✔'; claim.disabled = false; }
-            else cd.textContent = t;
-        }, 1000);
-        const close = v => { clearInterval(iv); ov.style.display = 'none'; resolve(v); };
-        claim.onclick  = () => close(true);
-        cancel.onclick = () => close(false);
-    });
-}
-
-// 4. AdManager corregido - SIN fallback automático al simulado
+// AdManager con pausa del juego
 const AdManager = {
     async show(slot) {
         if (adActive) return false;
         adActive = true;
         
+        // Pausar el juego si está jugando
+        const wasPlaying = currentState === GameState.PLAYING;
+        if (wasPlaying) {
+            gamePaused = true;
+            console.log('[ADS] 🎮 Juego pausado para anuncio');
+        }
+        
         try {
-            console.log(`[ADS] Intentando mostrar anuncio real para slot: ${slot}`);
+            console.log(`[ADS] Mostrando anuncio para: ${slot}`);
             
-            // Intentar con Monetag real
-            const rewarded = await showMonetagRewarded();
+            const result = await showMonetagRewarded();
             
-            if (rewarded === true) {
-                console.log('[ADS] ✅ Anuncio real completado');
+            if (result === true) {
+                console.log('[ADS] ✅ Anuncio completado - recompensa otorgada');
                 return true;
-            } else if (rewarded === false) {
-                console.log('[ADS] ❌ Anuncio real falló o fue cerrado sin recompensa');
-                return false;
             } else {
-                // null = SDK no disponible
-                console.warn('[ADS] ⚠️ SDK no disponible. Si ves esto, el SDK de Monetag no cargó.');
-                // Descomenta la siguiente línea SOLO si quieres usar el simulado como fallback manual
-                // return await showSimulatedAd(); 
+                console.log('[ADS] ❌ Anuncio no completado');
                 return false;
             }
             
         } catch(e) {
-            console.error('[ADS] Error general:', e);
+            console.error('[ADS] Error:', e);
             return false;
         } finally {
             adActive = false;
+            
+            // Reanudar el juego si estaba jugando
+            if (wasPlaying && gamePaused) {
+                gamePaused = false;
+                console.log('[ADS] 🎮 Juego reanudado');
+            }
         }
     }
 };
+
+// Manejar visibilitychange (cuando Telegram pausa el WebView)
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden && currentState === GameState.PLAYING && !adActive) {
+        gamePaused = true;
+        console.log('[GAME] ⏸️ Pausado por visibilitychange');
+    } else if (!document.hidden && gamePaused && !adActive) {
+        gamePaused = false;
+        console.log('[GAME] ▶️ Reanudado por visibilitychange');
+    }
+});
 
 // ================================================================
 //  JUEGO — base
@@ -633,7 +624,7 @@ function generateContent(){
 }
 
 document.addEventListener('keydown',e=>{
-    if(currentState!==GameState.PLAYING||adActive)return;
+    if(currentState!==GameState.PLAYING||adActive||gamePaused)return;
     if(e.code==='ArrowLeft'||e.code==='KeyA'){e.preventDefault();player.moveLane(-1)}
     if(e.code==='ArrowRight'||e.code==='KeyD'){e.preventDefault();player.moveLane(1)}
     if(e.code==='Space'||e.code==='ArrowUp'||e.code==='KeyW'){e.preventDefault();player.jump()}
@@ -643,13 +634,13 @@ let touchSX=0,touchSY=0;
 canvas.addEventListener('touchstart',e=>{e.preventDefault();touchSX=e.touches[0].clientX;touchSY=e.touches[0].clientY},{passive:false});
 canvas.addEventListener('touchend',e=>{
     e.preventDefault();
-    if(currentState!==GameState.PLAYING||adActive)return;
+    if(currentState!==GameState.PLAYING||adActive||gamePaused)return;
     const dx=e.changedTouches[0].clientX-touchSX,dy=e.changedTouches[0].clientY-touchSY;
     if(Math.abs(dx)>Math.abs(dy)){if(dx>30)player.moveLane(1);else if(dx<-30)player.moveLane(-1)}
     else{if(dy<-30)player.jump();else if(dy>30)player.slide()}
 },{passive:false});
 canvas.addEventListener('mousedown',e=>{
-    if(currentState!==GameState.PLAYING||adActive)return;
+    if(currentState!==GameState.PLAYING||adActive||gamePaused)return;
     const r=canvas.getBoundingClientRect(),x=e.clientX-r.left;
     if(x<W/3)player.moveLane(-1);else if(x>W*2/3)player.moveLane(1);else player.jump();
 });
@@ -777,8 +768,15 @@ $('adStartBtn').addEventListener('click',async()=>{
     if(adActive)return;
     toast('Cargando anuncio…');
     const ok=await AdManager.show('doubleCoins');
-    if(ok){startGame();coinMultiplier=2;$('coinMult').classList.remove('hidden');toast('💎 ¡Gemas x2 activadas!');haptic('notify','success')}
-    else toast('Anuncio no completado o SDK no disponible');
+    if(ok){
+        coinMultiplier=2;
+        $('coinMult').classList.remove('hidden');
+        toast('💎 ¡Gemas x2 activadas!');
+        haptic('notify','success');
+        startGame();
+    } else {
+        toast('Anuncio no completado');
+    }
 });
 $('reviveBtn').addEventListener('click',async()=>{
     console.log('[REVIVE] click →',{adActive,revivesUsed});
@@ -788,7 +786,7 @@ $('reviveBtn').addEventListener('click',async()=>{
     try{
         const ok=await AdManager.show('revive');
         console.log('[REVIVE] resultado del anuncio:',ok);
-        if(ok) revive(); else toast('Anuncio no completado o SDK no disponible');
+        if(ok) revive(); else toast('Anuncio no completado');
     }catch(e){ console.error('[REVIVE] error:',e); toast('Error al mostrar el anuncio'); }
     finally{ btn.disabled=false; updateReviveBtn(); }
 });
@@ -800,8 +798,8 @@ function startGame(){
     if (tg && tg.BackButton) tg.BackButton.hide();
     score=0;coins=0;distance=0;frameCount=0;
     gameSpeed=CFG.INITIAL_SPEED;spawnTimer=90;
-    coinMultiplier=1;revivesUsed=0;reviveGrace=0;
-    $('coinMult').classList.add('hidden');
+    if (coinMultiplier === 1) coinMultiplier = 1; // Mantener x2 si ya está activado
+    revivesUsed=0;reviveGrace=0;
     obstacleList=[];coinList=[];particles.active=[];
     player.reset();
 }
@@ -851,7 +849,7 @@ function gameLoop(){
     requestAnimationFrame(gameLoop);
     try{
         frameCount++;
-        if(currentState===GameState.PLAYING){
+        if(currentState===GameState.PLAYING && !gamePaused){
             gameSpeed=Math.min(CFG.INITIAL_SPEED+CFG.ACCELERATION*frameCount,CFG.MAX_SPEED);
             distance+=gameSpeed;score+=gameSpeed*.12;
             if(reviveGrace>0)reviveGrace--;
